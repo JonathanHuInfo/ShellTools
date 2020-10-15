@@ -31,12 +31,12 @@ Address_Detection() {
     return ${HTTP_CODE}
 }
 #退出脚本命令
-Exit_Script(){ 
-    kill -s TERM $TOP_PID 
+Exit_Script() {
+    kill -s TERM $TOP_PID
 }
 #网络地址检测
-Network_Detection() { 
-    echo  "" 
+Network_Detection() {
+    echo ""
     #百度检测,检测网络是否可用
     Address_Detection www.baidu.com
     restul_code=$(echo $?)
@@ -45,7 +45,7 @@ Network_Detection() {
 
     else
         echo -e "${red_font}当前网络异常,请检查网络是否正常${white_font}"
-       :|Exit_Script
+        : | Exit_Script
     fi
 }
 
@@ -197,7 +197,7 @@ Resolve_Address() {
 }
 #清理相关目录与关键字相匹配的文件及文件夹
 #第一个参数文件夹目录
-#清理关键字
+#第二个参数清理关键字
 Clean_files() {
     files=$(ls $1)
     for filename in $files; do
@@ -267,7 +267,7 @@ After_Service_Status() {
         echo -e "${red_font}$1启动失败。${white_font} \n"
     else
         echo -e "${green_font}$1启动成功!${white_font} \n"
-        :|Exit_Script
+        : | Exit_Script
     fi
 }
 #服务检查
@@ -318,7 +318,7 @@ Zookeeper_Installation() {
     echo "#zookeeper-config-start" >>~/.bash_profile
     echo "export ZOOKEEPER_INSTALL=${app_install_dir}" >>~/.bash_profile
     echo "export PATH=\$PATH:\$ZOOKEEPER_INSTALL/bin" >>~/.bash_profile
-    echo "#zookeeper-config-end" >>~/.bash_profile 
+    echo "#zookeeper-config-end" >>~/.bash_profile
 
     #TODO 优化点 是否优化Ip的获取策略 或者系统变量集中管理
     ip="$(hostname --fqdn)"
@@ -335,11 +335,11 @@ Zookeeper_Installation() {
     echo -e "${purple_font}开始对Zookeeper服务进行自检${white_font} \n"
     service_check ${keyword}
 }
-#Nginx安装 
-Nginx_Installation() { 
+#Nginx安装
+Nginx_Installation() {
     if [ ${global_cache_map["Version"]} -ne 7 ]; then
         echo -e "\n${yellow_font}Nginx安装包方式仅支持Linux7版本${white_font}\n"
-        :|Exit_Script
+        : | Exit_Script
     fi
     echo ""
     echo -e "${purple_font}开始安装Nginx应用${white_font}"
@@ -471,13 +471,13 @@ Nexus_Installation() {
 }
 
 #从for循环中返回字符串处理
-Return_For_Str(){ 
-    if [[ $1 == "openJdk" ]]; then 
+Return_For_Str() {
+    if [[ $1 == "openJdk" ]]; then
         files=$(ls "${app_install_dir}")
         for filename in $files; do
-            result=$(echo ${filename} | grep ${install_version}"-") 
-            if [[ ${result} != "" ]]; then 
-               echo "${result}"
+            result=$(echo ${filename} | grep ${install_version}"-")
+            if [[ ${result} != "" ]]; then
+                echo "${result}"
             fi
 
         done
@@ -485,7 +485,7 @@ Return_For_Str(){
 }
 #OpenJDk
 OpenJdk_Installation() {
-    
+
     keyword="openJdk"
     #检查OpenJdk是否安装
     yum list installed | grep -e java -e jdk
@@ -495,7 +495,7 @@ OpenJdk_Installation() {
             yum -y remove java-* &>/dev/null
             yum -y remove tzdata-java* &>/dev/null
         else
-           :|Exit_Script
+            : | Exit_Script
         fi
     fi
     echo -e "\n${purple_font}开始安装OpenJDK应用${white_font}"
@@ -519,17 +519,16 @@ ${pink_font}2. java-11-openjdk.x86_64${white_font}
 
     yum install -y ${install_version} ${install_version}-devel
 
+    app_install_dir="/usr/lib/jvm"
     #解放如何从循环中返回字符串
-    result=$(Return_For_Str  ${keyword} ${app_install_dir}) 
-
-    app_install_dir="/usr/lib/jvm"/${result}
+    result=$(Return_For_Str ${keyword} ${app_install_dir})
 
     sed -i '/OpenJdk-config-start/,+4d' ~/.bash_profile
     echo "#OpenJdk-config-start" >>~/.bash_profile
-    echo "export JAVA_HOME=${app_install_dir}" >>~/.bash_profile
+    echo "export JAVA_HOME=${app_install_dir}/${result}" >>~/.bash_profile
     echo "export CLASSPATH=.:\$JAVA_HOME/jre/lib/rt.jar:\$JAVA_HOME/lib/dt.jar:\$JAVA_HOME/lib/tools.jar" >>~/.bash_profile
     echo "export PATH=\$PATH:\$JAVA_HOME/bin" >>~/.bash_profile
-    echo "#OpenJdk-config-start" >>~/.bash_profile 
+    echo "#OpenJdk-config-start" >>~/.bash_profile
 }
 #*********************Start Local StandAlone Installation(本地安装)*********************
 Local_StandAlone_Installation() {
