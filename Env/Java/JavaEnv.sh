@@ -95,7 +95,7 @@ Resource_Initialization() {
     application_download_root_address_map["zookeeper"]="https://mirrors.tuna.tsinghua.edu.cn/apache/zookeeper/"
     application_download_root_address_map["kafka"]=""
     application_download_root_address_map["nginx"]="http://nginx.org/download/"
-    application_download_root_address_map["nexus"]=""
+    application_download_root_address_map["nacos"]="https://github.com/alibaba/nacos/releases"
     application_download_root_address_map["redis"]="http://download.redis.io/releases/"
 
 }
@@ -157,7 +157,7 @@ Password_Generation() {
 #第二个参数一层解析关键字
 #第三个参数 安装包拓展名
 Resolve_Address() {
-    echo ""
+    echo -e "\n${purple_font}开始解析应用下载地址${white_font}"
     #自增值属性
     increase=0
     lynx -dump $1 >tmp_download_link.txt
@@ -174,8 +174,10 @@ Resolve_Address() {
 
     echo -e "\n${blue_font}提示:如果解析出来的地址是根目录地址,那么需要进行二次解析,如果是具体文件地址无需二次解析${white_font}\n"
 
-    read -e -p "是否对URL地址进行二次解析？[y/n](默认Y):" choose_y
-    if [[ ${choose_y} == [Yy] ]] || [[ ${choose_y} == "" ]]; then
+    read -e -p "是否对URL地址进行二次解析？[y/n](默认N):" choose_y
+    if [[ ${choose_y} == [N/n] ]] || [[ ${choose_y} == "" ]]; then
+        global_cache_map["link"]=${link_root}
+    else
         echo ""
         lynx -dump ${link_root} >tmp_link_file.txt
         cat tmp_link_file.txt | grep 'http' | grep $3 | cut -d\" -f 2 >tmp_result.txt
@@ -187,8 +189,6 @@ Resolve_Address() {
         echo -n -e "请复制完整URL地址填写:" # 参数-n的作用是不换行，echo默认换行
         read install_link
         global_cache_map["link"]=${install_link}
-    else
-        global_cache_map["link"]=${link_root}
 
     fi
 
@@ -237,13 +237,12 @@ Download_File() {
     esac
 
     #清理工作目录与关键字相匹配的文件及文件夹
-    read -e -p "是否清理${work_path}目录中 $1 相关文件？[y/n](默认Y):" choose_y
-    if [[ ${choose_y} == [Yy] ]] || [[ ${choose_y} == "" ]]; then
+    read -e -p "是否清理${work_path}目录中 $1 相关文件？[y/n](默认N):" choose_y
+    if [[ ${choose_y} == [N/n] ]] || [[ ${choose_y} == "" ]]; then
+        echo -e "${yellow_font}删除操作已取消.${white_font}"
+    else
         Clean_files ${work_path} $1
         echo -e "${green_font}${work_path}目录中的${yellow_font}$1${white_font}${white_font}相关文件已删除"
-    else
-        echo -e "${yellow_font}删除操作已取消.${white_font}"
-
     fi
     echo ""
 }
@@ -439,37 +438,6 @@ Docker_Installation() {
     fi
     docker --version
 }
-#nexus
-Nexus_Installation() {
-    echo ""
-    echo -e "${purple_font}开始安装Nexus应用${white_font}"
-    #需要的变量数据
-    suffix=${package_suffix_map["tar"]}
-    root_link=${application_download_root_address_map["redis"]}
-
-    #连接网络进行选择下载
-    Resolve_Address ${root_link} '/redis-' ${suffix}
-    #完整的地址
-    complete_address=${global_cache_map["link"]}
-
-    #安装包文件全名（带后缀）
-    file_name=${complete_address##*/}
-    #文件夹名称
-    folder_name=${file_name//${suffix}/}
-
-    #app安装目录
-    app_install_dir=${install_dir}/${folder_name}
-
-    keyword="redis"
-
-    Before_Service_Status ${keyword}
-
-    #处理工作目录安装包
-    Download_File ${keyword} ${complete_address} ${file_name}
-
-    cd $app_install_dir
-}
-
 #从for循环中返回字符串处理
 Return_For_Str() {
     if [[ $1 == "openJdk" ]]; then
@@ -485,7 +453,8 @@ Return_For_Str() {
 }
 #OpenJDk
 OpenJdk_Installation() {
-
+    echo ""
+    echo -e "${purple_font}开始安装JDK应用${white_font}"
     keyword="openJdk"
     #检查OpenJdk是否安装
     yum list installed | grep -e java -e jdk
@@ -530,6 +499,45 @@ ${pink_font}2. java-11-openjdk.x86_64${white_font}
     echo "export PATH=\$PATH:\$JAVA_HOME/bin" >>~/.bash_profile
     echo "#OpenJdk-config-start" >>~/.bash_profile
 }
+#Nacos
+Nacos_Installation() {
+    echo ""
+    echo -e "${purple_font}开始安装Nacos应用${white_font}\n"
+    echo -e "${purple_font}开始检测是否安装JDK环境${white_font}"
+    yum list installed | grep -e java -e jdk
+    if [ $? -eq 0 ]; then
+        echo -e "\n${green_font}JDK环境已经安装 ${white_font}"
+    else
+        #检查JDK环境
+        OpenJdk_Installation
+    fi
+
+    #需要的变量数据
+    suffix=${package_suffix_map["tar"]}
+    root_link=${application_download_root_address_map["nacos"]}
+
+    #连接网络进行选择下载
+    Resolve_Address ${root_link} '/nacos-' ${suffix}
+    #完整的地址
+    complete_address=${global_cache_map["link"]}
+
+    #安装包文件全名（带后缀）
+    file_name=${complete_address##*/}
+    #关键字
+    keyword="nacos"
+
+    #app安装目录
+    app_install_dir=${install_dir}/${keyword}
+
+    Before_Service_Status ${keyword}
+
+    #处理工作目录安装包
+    Download_File ${keyword} ${complete_address} ${file_name}
+
+    cd $app_install_dir
+    sh ./bin/startup.sh -m standalone
+    service_check ${keyword}
+}
 #*********************Start Local StandAlone Installation(本地安装)*********************
 Local_StandAlone_Installation() {
     echo -e " 
@@ -539,13 +547,15 @@ ${pink_font}2. Nginx${white_font}
 ${pink_font}3. Docker${white_font} 
 ${pink_font}4. Redis${white_font} 
 ${pink_font}5. Zookeeper${white_font} 
-${pink_font}6. Kafka${white_font}    
-${blue_font}———————————————————————————Docker方式—————————————————————————————————${white_font}
-${pink_font}7. Nexus${white_font}
-${pink_font}8. Mysql${white_font} 
-${pink_font}9. Nacos${white_font}
-${pink_font}10. Sentinel${white_font}
+${pink_font}6. Kafka${white_font}
+${pink_font}7. Nacos${white_font}      
+
 "
+    # ${blue_font}———————————————————————————Docker方式—————————————————————————————————${white_font}
+    # ${pink_font}7. Nexus${white_font}
+    # ${pink_font}8. Mysql${white_font}
+    # ${pink_font}9. Nacos${white_font}
+    # ${pink_font}10. Sentinel${white_font}
     echo && read -e -p "请输入数字 ：" num
     case "$num" in
     1)
@@ -567,7 +577,7 @@ ${pink_font}10. Sentinel${white_font}
         Kafka_Installation
         ;;
     7)
-        Nexus_Installation
+        Nacos_Installation
         ;;
     8)
         Docker_Installation
