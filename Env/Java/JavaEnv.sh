@@ -90,13 +90,14 @@ Resource_Initialization() {
     package_suffix_map["tgz"]=".taz"
     package_suffix_map["rpm"]=".rpm"
     package_suffix_map["zip"]=".zip"
-
+    package_suffix_map["jar"]=".jar"
     #应用下载根目录地址
     application_download_root_address_map["zookeeper"]="https://mirrors.tuna.tsinghua.edu.cn/apache/zookeeper/"
     application_download_root_address_map["kafka"]=""
     application_download_root_address_map["nginx"]="http://nginx.org/download/"
     application_download_root_address_map["nacos"]="https://github.com/alibaba/nacos/releases"
     application_download_root_address_map["redis"]="http://download.redis.io/releases/"
+    application_download_root_address_map["sentinel_dashboard"]="https://github.com/alibaba/Sentinel/releases"
 
 }
 
@@ -233,7 +234,9 @@ Download_File() {
     *.tgz)
         tar -zxf ${work_path}/$3 -C $install_dir
         ;;
-    *.rpm) ;;
+    *.jar)
+        cp ${work_path}/$3 $install_dir
+        ;;
     esac
 
     #清理工作目录与关键字相匹配的文件及文件夹
@@ -538,6 +541,42 @@ Nacos_Installation() {
     sh ./bin/startup.sh -m standalone
     service_check ${keyword}
 }
+#Sentinel_Dashboard
+Sentinel_Dashboard_Installation() {
+    echo ""
+    echo -e "${purple_font}开始安装Sentinel_Dashboard应用${white_font}\n"
+    echo -e "${purple_font}开始检测是否安装JDK环境${white_font}"
+    yum list installed | grep -e java -e jdk
+    if [ $? -eq 0 ]; then
+        echo -e "\n${green_font}JDK环境已经安装 ${white_font}"
+    else
+        #检查JDK环境
+        OpenJdk_Installation
+    fi
+    #需要的变量数据
+    suffix=${package_suffix_map["jar"]}
+    root_link=${application_download_root_address_map["sentinel_dashboard"]}
+
+    #连接网络进行选择下载
+    Resolve_Address ${root_link} '/sentinel-dashboard-' ${suffix}
+    #完整的地址
+    complete_address=${global_cache_map["link"]}
+
+    #安装包文件全名（带后缀）
+    file_name=${complete_address##*/} 
+
+    keyword="sentinel-dashboard"
+
+    Before_Service_Status ${keyword}
+
+    #处理工作目录安装包
+    Download_File ${keyword} ${complete_address} ${file_name}
+
+    cd ${install_dir}
+    java -Dserver.port=7777 -Dcsp.sentinel.dashboard.server=localhost:7777 -Dproject.name=sentinel-dashboard -jar ${file_name} &
+
+    service_check ${keyword}
+}
 #*********************Start Local StandAlone Installation(本地安装)*********************
 Local_StandAlone_Installation() {
     echo -e " 
@@ -547,9 +586,9 @@ ${pink_font}2. Nginx${white_font}
 ${pink_font}3. Docker${white_font} 
 ${pink_font}4. Redis${white_font} 
 ${pink_font}5. Zookeeper${white_font} 
-${pink_font}6. Kafka${white_font}
-${pink_font}7. Nacos${white_font}      
-
+${pink_font}6. Kafka${white_font} 
+${pink_font}7. Nacos${white_font} 
+${pink_font}8. sentinel_dashboard${white_font}  
 "
     # ${blue_font}———————————————————————————Docker方式—————————————————————————————————${white_font}
     # ${pink_font}7. Nexus${white_font}
@@ -580,7 +619,7 @@ ${pink_font}7. Nacos${white_font}
         Nacos_Installation
         ;;
     8)
-        Docker_Installation
+        Sentinel_Dashboard_Installation
         ;;
     9)
         Docker_Installation
