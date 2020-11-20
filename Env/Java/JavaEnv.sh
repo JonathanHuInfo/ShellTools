@@ -82,7 +82,29 @@ System_Variable() {
     global_cache_map["OS"]=${OS}
     global_cache_map["Version"]=${VER}
 }
+#当前系统使用状态
+System_State() {
+    echo -e "\n☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆"
+    echo -e "${yellow_font}当前运行机器状态: ${white_font}"
 
+    # 获取cpu总核数
+    cpu_num=$(grep -c "model name" /proc/cpuinfo)
+    echo -e "${yellow_font}cpu总核数：${cpu_num}${white_font}"
+
+    #cpu型号
+    CPU=$(grep 'model name' /proc/cpuinfo | uniq | awk -F : '{print $2}' | sed 's/^[ \t]*//g' | sed 's/ \+/ /g')
+    echo -e "${yellow_font}cpu型号:${CPU}${white_font}"
+
+    #cpu使用率
+    CPU_INFO=$(top -n1 | grep "Cpu(s):" | awk '{print echo "CPU使用率(%):"$2 echo "%"}')
+    echo -e "${yellow_font}${CPU_INFO}${white_font}"
+
+    #内存情况
+    mem_use_info=($(awk '/MemTotal/{memtotal=$2}/MemAvailable/{memavailable=$2}END{printf "%.2f %.2f %.2f",memtotal/1024/1024," "(memtotal-memavailable)/1024/1024," "(memtotal-memavailable)/memtotal*100}' /proc/meminfo))
+    mem_unused_info=$(free -h | grep Mem | awk '{print echo "未使用:"$7}')
+    echo -e "${yellow_font}总内存:${mem_use_info[0]}G 已使用:${mem_use_info[1]}G ${mem_unused_info} 使用率:${mem_use_info[2]}%${white_font}"
+    echo -e "☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆\n"
+}
 #资源初始化
 Resource_Initialization() {
     #包后缀
@@ -99,6 +121,8 @@ Resource_Initialization() {
     application_download_root_address_map["redis"]="http://download.redis.io/releases/"
     application_download_root_address_map["sentinel_dashboard"]="https://github.com/alibaba/Sentinel/releases"
 
+    #系统版本信息
+    System_Variable
 }
 
 #创建根目录
@@ -124,12 +148,13 @@ CheckEnvironment() {
         echo -e "${purple_font}开始安装lynx环境${white_font}"
         dnf config-manager --set-enabled PowerTools
         yum install -y lynx
+        yum -y update nss
     fi
 
-    for i in nss gcc gcc-c++ make openssl-devel pcre-devel epel-release zlib zlib-devel yum-utils device-mapper-persistent-data lvm2 jemalloc-devel; do
+    for i in gcc gcc-c++ make openssl-devel pcre-devel epel-release zlib zlib-devel yum-utils device-mapper-persistent-data lvm2 jemalloc-devel; do
         rpm -q $i
         if [ $? -ne 0 ]; then
-            echo -e "${purple_font} 正在安装 $i 环境 ${white_font} \n"
+            echo -e "${purple_font}正在安装 $i 环境 ${white_font} \n"
             yum install -y $i
             #yum install -y $i &>/dev/null
         fi
@@ -169,9 +194,17 @@ Resolve_Address() {
         increase=$(($increase + 1))
         echo -e ${increase}". "${pink_font}${line#*.}${white_font}
     done
-    #TODO 假如别人输入的不是展示的url地址 会后续逻辑走不通
-    echo -n -e "请复制完整URL地址填写:" # 参数-n的作用是不换行，echo默认换行
-    read link_root             # 把键盘输入放入变量link_root
+
+    while :; do
+        #TODO 假如别人输入的不是展示的url地址 会后续逻辑走不通
+        echo -n -e "\n请复制完整URL地址填写:" # 参数-n的作用是不换行，echo默认换行
+        read link_root               # 把键盘输入放入变量link_root
+        if [ -z ${link_root} ]; then
+            echo -e "${red_font}输入不允许为空请重新输入${white_font}"
+        else
+            break
+        fi
+    done
 
     echo -e "\n${blue_font}提示:如果解析出来的地址是根目录地址,那么需要进行二次解析,如果是具体文件地址无需二次解析${white_font}\n"
 
@@ -419,11 +452,46 @@ Redis_Installation() {
 
 #Docker
 Docker_Installation() {
-    echo -e "${purple_font}开始安装Docker${white_font} \n"
+    echo ""
+    echo -e "${purple_font}开始安装Docker${white_font} "
     docker_version="$(docker -v | cut -d ' ' -f3 | cut -d ',' -f1)"
     #当串的长度为0时为真(空串)
     if [ -z "$docker_version" ]; then
         sudo yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
+
+        read -p "是否有Docker镜像加速地址。[y/n]" choose
+
+        if [ ! -f "/etc/docker/daemon.json" ]; then
+            mkdir -p /etc/docker
+            touch /etc/docker/daemon.json
+        fi
+
+        mkdir -p /etc/docker
+        rm -rf /etc/docker/daemon.json
+        if [ ${choose} == "y" ]; then
+            while :; do
+                #TODO 假如别人输入的不是展示的url地址 会后续逻辑走不通
+                echo -n -e "\n请输入您的Docker镜像加速地址:" # 参数-n的作用是不换行，echo默认换行
+                read link_root                    # 把键盘输入放入变量link_root
+                if [ -z ${link_root} ]; then
+                    echo -e "${red_font}输入不允许为空请重新输入${white_font}"
+                else
+                    tee /etc/docker/daemon.json <<-'EOF'
+{
+  "registry-mirrors": ["输入的镜像加速地址"]
+}
+EOF
+                    sed -i "s!输入的镜像加速地址!"${link_root}"!g" /etc/docker/daemon.json
+                    cat /etc/docker/daemon.json
+                    break
+                fi
+            done
+
+        else
+
+            echo -e "${yellow_font}\n你个小可爱，加速地址都没有，还不赶紧去注册一个。${white_font}\n"
+        fi
+
         if [[ ${global_cache_map["Version"]} == "8" ]]; then
             yum makecache
             yum install https://download.docker.com/linux/fedora/30/x86_64/stable/Packages/containerd.io-1.2.6-3.3.fc30.x86_64.rpm
@@ -434,13 +502,20 @@ Docker_Installation() {
         fi
         Before_Service_Status "yum"
         sudo systemctl start docker
+        #设置开机启动
+        sudo systemctl enable docker
     fi
     # -n 当串的长度大于0时为真(串非空)
     if [ -n "$docker_version" ]; then
-        echo -e "${green_font} docker 已经安装 ${white_font} \n"
+        echo -e "${green_font}Docker已经安装 ${white_font} \n"
+        echo -e "☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆"
+        echo -e "${yellow_font}当前Docker版本:${white_font}"
+        docker --version
+        echo -e "☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆"
     fi
-    docker --version
+
 }
+
 #从for循环中返回字符串处理
 Return_For_Str() {
     if [[ $1 == "openJdk" ]]; then
@@ -462,8 +537,8 @@ OpenJdk_Installation() {
     #检查OpenJdk是否安装
     yum list installed | grep -e java -e jdk
     if [ $? -eq 0 ]; then
-        read -p "继续执行将卸载JDK,y确定，其他退出?" choose
-        if [ ${choose} == "y" ] || [ ${choose} == "" ]; then
+        read -p "继续执行将卸载JDK?[y/n]" choose
+        if [ ${choose} == "y" ]; then
             yum -y remove java-* &>/dev/null
             yum -y remove tzdata-java* &>/dev/null
         else
@@ -501,6 +576,11 @@ ${pink_font}2. java-11-openjdk.x86_64${white_font}
     echo "export CLASSPATH=.:\$JAVA_HOME/jre/lib/rt.jar:\$JAVA_HOME/lib/dt.jar:\$JAVA_HOME/lib/tools.jar" >>~/.bash_profile
     echo "export PATH=\$PATH:\$JAVA_HOME/bin" >>~/.bash_profile
     echo "#OpenJdk-config-start" >>~/.bash_profile
+
+    echo -e "\n☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆"
+    echo -e "${yellow_font}当前JDK版本:${white_font}"
+    java -version
+    echo -e "☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆"
 }
 #Nacos
 Nacos_Installation() {
@@ -509,7 +589,10 @@ Nacos_Installation() {
     echo -e "${purple_font}开始检测是否安装JDK环境${white_font}"
     yum list installed | grep -e java -e jdk
     if [ $? -eq 0 ]; then
-        echo -e "\n${green_font}JDK环境已经安装 ${white_font}"
+        echo -e "\n☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆"
+        echo -e "${yellow_font}当前JDK版本:${white_font}"
+        java -version
+        echo -e "☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆\n"
     else
         #检查JDK环境
         OpenJdk_Installation
@@ -563,7 +646,7 @@ Sentinel_Dashboard_Installation() {
     complete_address=${global_cache_map["link"]}
 
     #安装包文件全名（带后缀）
-    file_name=${complete_address##*/} 
+    file_name=${complete_address##*/}
 
     keyword="sentinel-dashboard"
 
@@ -577,7 +660,41 @@ Sentinel_Dashboard_Installation() {
 
     service_check ${keyword}
 }
-#*********************Start Local StandAlone Installation(本地安装)*********************
+#Nexus方式
+Nexus_Installation() {
+    echo ""
+    echo -e "${purple_font}开始安装Nexus应用${white_font}\n"
+    echo -e "${purple_font}开始检测是否安装Docker环境${white_font}"
+    docker_version="$(docker -v | cut -d ' ' -f3 | cut -d ',' -f1)"
+    #当串的长度为0时为真(空串)
+    if [ -z "$docker_version" ]; then
+        Docker_Installation
+    else
+        echo -e "\n${green_font}Docker已经安装 ${white_font} "
+        echo -e "☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆"
+        echo -e "${yellow_font}当前Docker版本:${white_font}"
+        docker --version
+        echo -e "☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆\n"
+    fi
+    #判断文件夹是否存在 mkdir /deploy/config/nexus3
+    docker pull sonatype/nexus3
+
+    docker run -id --privileged=true --name=nexus3 --restart=always -p 8081:8081 -v /deploy/config/nexus3/nexus-data:/var/nexus-data sonatype/nexus3
+}
+#预处理
+Pretreatment() {
+    #网络地址检测
+    Network_Detection
+    #安装根目录
+    Create_Installation_Directory
+    #初始化Shell需要的资源
+    Resource_Initialization
+    #安装依赖的环境
+    CheckEnvironment
+    #当前机器信息
+    System_State
+}
+#********************Start Local StandAlone Installation(本地安装)*********************
 Local_StandAlone_Installation() {
     echo -e " 
 ${blue_font}———————————————————————————安装包方式—————————————————————————————————${white_font}
@@ -589,12 +706,12 @@ ${pink_font}5. Zookeeper${white_font}
 ${pink_font}6. Kafka${white_font} 
 ${pink_font}7. Nacos${white_font} 
 ${pink_font}8. sentinel_dashboard${white_font}  
+
+${blue_font}———————————————————————————Docker方式—————————————————————————————————${white_font}
+${pink_font}101. Nexus${white_font}
+${pink_font}102. Mysql${white_font}
 "
-    # ${blue_font}———————————————————————————Docker方式—————————————————————————————————${white_font}
-    # ${pink_font}7. Nexus${white_font}
-    # ${pink_font}8. Mysql${white_font}
-    # ${pink_font}9. Nacos${white_font}
-    # ${pink_font}10. Sentinel${white_font}
+
     echo && read -e -p "请输入数字 ：" num
     case "$num" in
     1)
@@ -621,10 +738,10 @@ ${pink_font}8. sentinel_dashboard${white_font}
     8)
         Sentinel_Dashboard_Installation
         ;;
-    9)
-        Docker_Installation
+    101)
+        Nexus_Installation
         ;;
-    10)
+    102)
         Docker_Installation
         ;;
     *)
@@ -644,11 +761,7 @@ Cluster_Installation() {
 #*********************End Method Area*********************
 
 #*********************Start Entrance(入口)*********************
-Network_Detection
-Create_Installation_Directory
-Resource_Initialization
-CheckEnvironment
-System_Variable
+Pretreatment
 echo -e "${blue_font}
 ---------------- Linux环境运维脚本 NuoMark 制作 -----------------
 ------ JAVA Development Environment Installation Script ------
